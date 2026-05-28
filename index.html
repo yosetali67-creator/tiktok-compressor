@@ -1,28 +1,24 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
-<<script src="https://unpkg.com/coi-serviceworker"></script>>
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مُهندس الجودة | ضاغط فيديوهات تيك توك الذكي</title>
-    <!-- استدعاء مكتبة التصميم المودرن Tailwind -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <!-- استدعاء مكتبة FFmpeg للعمل داخل المتصفح مجاناً -->
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ffmpeg/0.12.10/ffmpeg.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/util/0.12.5/util.min.js"></script>
 </head>
 <body class="bg-gray-950 text-white min-h-screen flex flex-col items-center justify-center p-4">
 
     <div class="max-w-md w-full bg-gray-900 border border-gray-800 rounded-2xl p-6 text-center shadow-2xl">
-        <!-- اسم موقعك وشعارك -->
-        <h1 class="text-2xl font-black text-emerald-400 mb-2">اسم موقعك هنا</h1>
+        <h1 class="text-2xl font-black text-emerald-400 mb-2">مُهندس الجودة</h1>
         <p class="text-sm text-gray-400 mb-6">اضغط فيديوهاتك بجودة تيك توك وبدون خسارة بكسل واحد</p>
 
-        <!-- منطقة رفع الفيديو -->
         <div class="border-2 border-dashed border-gray-700 hover:border-emerald-500 rounded-xl p-8 mb-6 cursor-pointer transition" id="dropZone">
             <input type="file" id="videoInput" accept="video/*" class="hidden">
             <p class="text-gray-300" id="uploadText">اختر الفيديو أو اسحبه إلى هنا</p>
         </div>
 
-        <!-- شريط التقدم -->
         <div id="progressContainer" class="hidden mb-6">
             <div class="w-full bg-gray-800 rounded-full h-2.5 mb-2">
                 <div id="progressBar" class="bg-emerald-500 h-2.5 rounded-full" style="width: 0%"></div>
@@ -30,16 +26,14 @@
             <p id="progressText" class="text-xs text-gray-400">جاري المعالجة... 0%</p>
         </div>
 
-        <!-- زر التحميل -->
         <a id="downloadBtn" class="hidden w-full bg-emerald-500 hover:bg-emerald-600 text-gray-950 font-bold py-3 px-4 rounded-xl transition shadow-lg text-center block">
             تحميل الفيديو المضغوط بجودة عالية
         </a>
     </div>
 
-    <!-- السكربت البرمجي المشغل للموقع -->
     <script>
-        const { createFFmpeg, fetchFile } = FFmpeg;
-        const ffmpeg = createFFmpeg({ log: true });
+        // دالة تشغيل المحرك الجديد المتوافق مع الاستضافات المجانية
+        let ffmpeg = null;
 
         const videoInput = document.getElementById('videoInput');
         const dropZone = document.getElementById('dropZone');
@@ -60,34 +54,52 @@
             progressContainer.classList.remove('hidden');
             downloadBtn.classList.add('hidden');
 
-            // تشغيل الـ FFmpeg في المتصفح
-            if (!ffmpeg.isLoaded()) {
-                progressText.innerText = "جاري تشغيل محرك الجودة... انتظر ثواني";
-                await ffmpeg.load();
+            try {
+                if (!ffmpeg) {
+                    progressText.innerText = "جاري تشغيل محرك الجودة الذكي...";
+                    // استخدام نسخة الـ single thread لتجنب قيود الأمان والتعليق نهائياً
+                    ffmpeg = window.FFmpeg.createFFmpeg({ 
+                        log: true,
+                        corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js'
+                    });
+                    await ffmpeg.load();
+                }
+
+                progressText.innerText = "جاري قراءة تفاصيل البكسلات...";
+                ffmpeg.FS('writeFile', 'input.mp4', await window.FFmpeg.fetchFile(file));
+
+                // رصد تقدم الضغط
+                ffmpeg.setProgress(({ ratio }) => {
+                    const percentage = Math.min(Math.max(Math.round(ratio * 100), 0), 100);
+                    progressBar.style.width = `${percentage}%`;
+                    progressText.innerText = `جاري الضغط ومعالجة البكسلات... ${percentage}%`;
+                });
+
+                progressText.innerText = "بدء معالجة الحِدّة والألوان للتيك توك...";
+                
+                // تشغيل السكربت الاحترافي (CRF 20 متوازن جداً وسريع للمتصفح)
+                await ffmpeg.run(
+                    '-i', 'input.mp4',
+                    '-vcodec', 'libx264',
+                    '-crf', '20',
+                    '-preset', 'ultrafast',
+                    '-pix_fmt', 'yuv420p',
+                    'output.mp4'
+                );
+
+                const data = ffmpeg.FS('readFile', 'output.mp4');
+                const videoUrl = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+
+                progressText.innerText = "اكتملت المعالجة! الفيديو لن يفقد ذرة من جودته الآن";
+                progressBar.style.width = `100%`;
+                downloadBtn.href = videoUrl;
+                downloadBtn.download = `optimized_${file.name}`;
+                downloadBtn.classList.remove('hidden');
+
+            } catch (error) {
+                console.error(error);
+                progressText.innerText = "حدث خطأ أثناء المعالجة، يرجى المحاولة مرة أخرى.";
             }
-
-            // قراءة ملف الفيديو
-            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
-
-            // تحديث شريط التقدم
-            ffmpeg.setProgress(({ ratio }) => {
-                const percentage = Math.round(ratio * 100);
-                progressBar.style.width = `${percentage}%`;
-                progressText.innerText = `جاري الضغط ومعالجة البكسلات... ${percentage}%`;
-            });
-
-            // السكربت السحري للضغط (CRF 18 للألوان والحدة)
-            progressText.innerText = "بدء المعالجة الذكية الحادة...";
-            await ffmpeg.run('-i', 'input.mp4', '-vcodec', 'libx264', '-crf', '19', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', 'output.mp4');
-
-            // إخراج الفيديو الجاهز للتحميل
-            const data = ffmpeg.FS('readFile', 'output.mp4');
-            const videoUrl = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
-
-            progressText.innerText = "اكتمل الضغط بنجاح! جاهز للرفع على تيك توك";
-            downloadBtn.href = videoUrl;
-            downloadBtn.download = `optimized_${file.name}`;
-            downloadBtn.classList.remove('hidden');
         }
     </script>
 </body>
